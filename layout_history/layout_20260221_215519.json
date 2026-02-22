@@ -1,0 +1,286 @@
+{
+  "version": 1,
+  "app_title": "Glass Coating Industrial AI Dashboard",
+  "dataset": {
+    "file": "db2026.02.19.parquet",
+    "date_column": "data"
+  },
+  "global": {
+    "default_rows": 50000,
+    "default_sample_mode": "head"
+  },
+  "tabs": [
+    {
+      "name": "Overview",
+      "mode": "custom",
+      "filters": [
+        "product",
+        "data"
+      ],
+      "panels": [
+        {
+          "type": "kpis",
+          "title": "Quick KPIs",
+          "metrics": [
+            "thickness_mm",
+            "glassThickness_mm",
+            "actProcessSpeed_mm",
+            "c27.actVacuumPressure",
+            "c27.actVoltage",
+            "L_ABS_mean",
+            "RT_T_mean"
+          ]
+        },
+        {
+          "type": "chart",
+          "title": "Thickness vs Process Speed",
+          "chart_type": "scatter",
+          "x": "actProcessSpeed_mm",
+          "y": "thickness_mm",
+          "color": "product"
+        },
+        {
+          "type": "timeseries",
+          "title": "Optical Mean Over Time",
+          "date": "data",
+          "y": "L_T_mean",
+          "group": "product",
+          "agg": "mean",
+          "rolling": 7
+        }
+      ]
+    },
+    {
+      "name": "PLT 4S EVO 3.9",
+      "mode": "custom",
+      "filters": [
+        "product",
+        "date"
+      ],
+      "panels": [
+        {
+          "type": "kpis",
+          "title": "Key Metrics",
+          "metrics": [
+            "L_ABS_mean",
+            "L_RF_mean",
+            "L_RG_mean",
+            "L_T_mean"
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "L_ABS Over Time",
+          "date": "data",
+          "y": "L_ABS_mean",
+          "group": "plate",
+          "agg": "mean",
+          "rolling": 7
+        },
+        {
+          "type": "chart",
+          "title": "Voltage vs L_ABS",
+          "chart_type": "scatter",
+          "x": "c27.actVoltage",
+          "y": "L_ABS_mean",
+          "color": "product"
+        },
+        {
+          "type": "distribution",
+          "title": "Distribution of L_ABS_mean",
+          "col": "L_ABS_mean"
+        },
+        {
+          "type": "groupby",
+          "title": "Avg L_ABS by Day",
+          "group_cols": [
+            "dayOfWeek"
+          ],
+          "metrics": [
+            "L_ABS_mean"
+          ],
+          "agg": "mean"
+        }
+      ]
+    },
+    {
+      "name": "Production Analytics",
+      "mode": "custom",
+      "filters": [
+        "product",
+        "data"
+      ],
+      "panels": [
+        {
+          "type": "kpis",
+          "title": "Key Performance Indicators",
+          "metrics": [
+            "L_ABS_mean",
+            "RT_ABS_mean",
+            "a_ABS_mean",
+            "b_ABS_mean",
+            "glassThickness_mm",
+            "nomProcessSpeed_mm",
+            "duration_sec"
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "L_ABS Mean Over Time",
+          "date": "data",
+          "y": "L_ABS_mean",
+          "group": "product",
+          "agg": "mean",
+          "rolling": 7
+        },
+        {
+          "type": "groupby",
+          "title": "Average Coating Parameters by Product",
+          "group_cols": [
+            "product"
+          ],
+          "metrics": [
+            "L_ABS_mean",
+            "RT_ABS_mean",
+            "a_ABS_mean",
+            "b_ABS_mean",
+            "glassThickness_mm",
+            "nomProcessSpeed_mm"
+          ],
+          "agg": "mean"
+        },
+        {
+          "type": "chart",
+          "title": "Voltage vs Process Speed",
+          "chart_type": "scatter",
+          "x": "c27.actVoltage",
+          "y": "nomProcessSpeed_mm",
+          "color": "product"
+        },
+        {
+          "type": "distribution",
+          "title": "Distribution of Glass Thickness",
+          "col": "glassThickness_mm"
+        },
+        {
+          "type": "correlation",
+          "title": "Parameter Correlations"
+        }
+      ]
+    },
+    {
+      "name": "Professional Overview",
+      "mode": "custom",
+      "filters": [
+        "product",
+        "date"
+      ],
+      "panels": [
+        {
+          "type": "kpis",
+          "title": "Key Performance Indicators",
+          "metrics": [
+            "L_ABS_mean",
+            "L_RF_mean",
+            "RT_ABS_mean",
+            "RT_RF_mean",
+            "a_ABS_mean",
+            "a_RF_mean",
+            "b_ABS_mean",
+            "b_RF_mean",
+            "glassThickness_mm",
+            "thickness_mm"
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Absorptance Over Time",
+          "date": "data",
+          "y": "L_ABS_mean",
+          "group": "product",
+          "agg": "mean",
+          "rolling": 7
+        },
+        {
+          "type": "chart",
+          "title": "Voltage vs Arc Rate",
+          "chart_type": "scatter",
+          "x": "c27.actVoltage",
+          "y": "c27.actArcRate1",
+          "color": "product"
+        },
+        {
+          "type": "distribution",
+          "title": "Glass Thickness Distribution",
+          "col": "glassThickness_mm"
+        },
+        {
+          "type": "groupby",
+          "title": "Average Process Speed by Product",
+          "group_cols": [
+            "product"
+          ],
+          "metrics": [
+            "actProcessSpeed_mm"
+          ],
+          "agg": "mean"
+        }
+      ]
+    },
+    {
+      "name": "Process & Quality Overview",
+      "mode": "custom",
+      "filters": [
+        "product",
+        "date"
+      ],
+      "panels": [
+        {
+          "type": "kpis",
+          "title": "Key Optical KPIs",
+          "metrics": [
+            "L_ABS_mean",
+            "L_RF_mean",
+            "L_RG_mean",
+            "L_T_mean",
+            "RT_ABS_mean"
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Optical Properties Over Time",
+          "date": "data",
+          "y": "L_ABS_mean",
+          "group": "product",
+          "agg": "mean",
+          "rolling": 7
+        },
+        {
+          "type": "chart",
+          "title": "Voltage vs L_ABS",
+          "chart_type": "scatter",
+          "x": "c27.actVoltage",
+          "y": "L_ABS_mean",
+          "color": "product"
+        },
+        {
+          "type": "groupby",
+          "title": "Average Process Speeds by Product",
+          "group_cols": [
+            "product"
+          ],
+          "metrics": [
+            "actProcessSpeed_mm",
+            "nomProcessSpeed_mm"
+          ],
+          "agg": "mean"
+        },
+        {
+          "type": "distribution",
+          "title": "Distribution of Glass Thickness",
+          "col": "glassThickness_mm"
+        }
+      ]
+    }
+  ]
+}

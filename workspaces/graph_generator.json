@@ -1,0 +1,6 @@
+{
+  "type": "graph",
+  "x": "time",
+  "y": "value",
+  "description": "Interactive graph workspace to generate custom graphs by selecting variables for x and y axes."
+}

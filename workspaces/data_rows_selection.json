@@ -1,0 +1,7 @@
+{
+  "type": "table",
+  "options": {
+    "row_limit_selector": true,
+    "default_row_limit": 100
+  }
+}

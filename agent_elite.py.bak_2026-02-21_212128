@@ -1,0 +1,253 @@
+import json
+import os
+import re
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+import pyarrow.dataset as ds
+from openai import OpenAI
+
+from layout_manager import load_layout, save_layout_atomic, rollback_last
+
+client = OpenAI()
+
+LAYOUT_FILE = "layout.json"
+
+def _read_columns_from_parquet(parquet_file: str) -> List[str]:
+    try:
+        dataset = ds.dataset(parquet_file, format="parquet")
+        return dataset.schema.names
+    except Exception:
+        return []
+
+def _normalize_ws(s: str) -> str:
+    return re.sub(r"\s+", " ", s).strip()
+
+SYSTEM_PROMPT = """
+You are an elite industrial dashboard agent for a Streamlit app used in GLASS COATING process analytics.
+
+CRITICAL:
+- You control the UI by editing a single file: layout.json
+- You MUST output ONLY valid JSON (no markdown, no extra text)
+- When you create or modify tabs/panels, use ONLY columns that exist in the dataset columns list provided.
+- Prefer config-driven changes: add panels of supported types, set filters, set calculations.
+
+Supported actions:
+1) list_tabs
+2) create_tab
+3) add_panel
+4) set_tab_filters
+5) rename_tab
+6) delete_tab
+7) rollback_layout
+
+Tab schema:
+{
+  "name": "Tab Name",
+  "mode": "custom" | "plasma",
+  "filters": ["product","date", ...],
+  "panels": [ { "type": "...", ... }, ... ]
+}
+
+Supported panel types:
+- kpis: {type:"kpis", title, metrics:[...]}   (metrics are columns)
+- chart: {type:"chart", title, chart_type:"scatter|line|box|bar", x, y, color?, facet_row?, facet_col?}
+- chart_builder: {type:"chart_builder", title}
+- stats: {type:"stats", title}
+- distribution: {type:"distribution", title, col}
+- groupby: {type:"groupby", title, group_cols:[...], metrics:[...], agg:"mean|median|std|min|max"}
+- timeseries: {type:"timeseries", title, date:"data", y, group?, agg:"mean|median", rolling:int}
+- correlation: {type:"correlation", title}
+- pca: {type:"pca", title}
+- anomaly: {type:"anomaly", title}
+- plasma_stability: {type:"plasma_stability", title}  (works best in mode:"plasma")
+
+Rules:
+- If user asks "create anything" -> build a sensible tab with multiple panels.
+- If user asks for a specific graph -> add a chart panel with x/y.
+- If user asks to limit rows -> set layout.global.default_rows
+- Keep names short & professional.
+
+OUTPUT JSON examples:
+{"action":"list_tabs"}
+
+{"action":"create_tab","tab":{"name":"New Tab","mode":"custom","filters":["product","date"],"panels":[{"type":"stats","title":"Stats"}]}}
+
+{"action":"add_panel","tab_name":"Overview","panel":{"type":"chart","title":"Voltage vs L_ABS","chart_type":"scatter","x":"c27.actVoltage","y":"L_ABS_mean","color":"product"}}
+
+{"action":"rollback_layout"}
+"""
+
+def extract_json(text: str) -> Dict[str, Any]:
+    start = text.find("{")
+    end = text.rfind("}") + 1
+    if start < 0 or end <= start:
+        raise ValueError("No JSON object found in model output.")
+    return json.loads(text[start:end])
+
+def _find_tab(layout: dict, name: str) -> Optional[dict]:
+    for t in layout.get("tabs", []):
+        if isinstance(t, dict) and t.get("name") == name:
+            return t
+    return None
+
+def _tab_names(layout: dict) -> List[str]:
+    return [t.get("name") for t in layout.get("tabs", []) if isinstance(t, dict) and t.get("name")]
+
+def _validate_columns(panel: dict, columns: List[str]) -> List[str]:
+    # returns list of unknown columns used by panel
+    used = []
+    for k in ["x","y","color","facet_row","facet_col","col","date","group"]:
+        v = panel.get(k)
+        if isinstance(v, str):
+            used.append(v)
+    for k in ["metrics","group_cols"]:
+        v = panel.get(k)
+        if isinstance(v, list):
+            used.extend([x for x in v if isinstance(x, str)])
+    unknown = [c for c in used if c not in columns]
+    return sorted(set(unknown))
+
+def apply_command(cmd: Dict[str, Any], columns: List[str]) -> str:
+    action = cmd.get("action")
+    layout = load_layout(LAYOUT_FILE)
+
+    if action == "list_tabs":
+        names = _tab_names(layout)
+        return "TABS:\n- " + "\n- ".join(names) if names else "No tabs."
+
+    if action == "rollback_layout":
+        backup = rollback_last(LAYOUT_FILE)
+        return f"Rolled back to: {backup}"
+
+    if action == "create_tab":
+        tab = cmd.get("tab", {})
+        if not isinstance(tab, dict):
+            return "ERROR: tab must be object."
+        name = _normalize_ws(str(tab.get("name", "")))
+        if not name:
+            return "ERROR: missing tab name."
+        if _find_tab(layout, name):
+            return f"ERROR: tab already exists: {name}"
+
+        # validate panels
+        panels = tab.get("panels", [])
+        if isinstance(panels, list):
+            for p in panels:
+                if isinstance(p, dict):
+                    unknown = _validate_columns(p, columns) if columns else []
+                    if unknown:
+                        return f"ERROR: unknown columns in panel: {unknown}"
+
+        layout.setdefault("tabs", []).append({
+            "name": name,
+            "mode": tab.get("mode", "custom"),
+            "filters": tab.get("filters", ["product","date"]),
+            "panels": tab.get("panels", [])
+        })
+        save_layout_atomic(layout, LAYOUT_FILE)
+        return f"Created tab: {name}"
+
+    if action == "add_panel":
+        tab_name = _normalize_ws(str(cmd.get("tab_name","")))
+        panel = cmd.get("panel", {})
+        if not tab_name or not isinstance(panel, dict):
+            return "ERROR: add_panel requires tab_name and panel object."
+        tab = _find_tab(layout, tab_name)
+        if not tab:
+            return f"ERROR: tab not found: {tab_name}"
+        unknown = _validate_columns(panel, columns) if columns else []
+        if unknown:
+            return f"ERROR: unknown columns in panel: {unknown}"
+        tab.setdefault("panels", []).append(panel)
+        save_layout_atomic(layout, LAYOUT_FILE)
+        return f"Added panel to {tab_name}: {panel.get('type')}"
+
+    if action == "set_tab_filters":
+        tab_name = _normalize_ws(str(cmd.get("tab_name","")))
+        filters = cmd.get("filters", [])
+        tab = _find_tab(layout, tab_name)
+        if not tab:
+            return f"ERROR: tab not found: {tab_name}"
+        if not isinstance(filters, list):
+            return "ERROR: filters must be list."
+        tab["filters"] = filters
+        save_layout_atomic(layout, LAYOUT_FILE)
+        return f"Updated filters for {tab_name}"
+
+    if action == "rename_tab":
+        old = _normalize_ws(str(cmd.get("old","")))
+        new = _normalize_ws(str(cmd.get("new","")))
+        if not old or not new:
+            return "ERROR: rename_tab requires old/new."
+        tab = _find_tab(layout, old)
+        if not tab:
+            return f"ERROR: tab not found: {old}"
+        if _find_tab(layout, new):
+            return f"ERROR: tab already exists: {new}"
+        tab["name"] = new
+        save_layout_atomic(layout, LAYOUT_FILE)
+        return f"Renamed tab: {old} -> {new}"
+
+    if action == "delete_tab":
+        name = _normalize_ws(str(cmd.get("name","")))
+        if not name:
+            return "ERROR: delete_tab requires name."
+        tabs = layout.get("tabs", [])
+        layout["tabs"] = [t for t in tabs if not (isinstance(t, dict) and t.get("name") == name)]
+        save_layout_atomic(layout, LAYOUT_FILE)
+        return f"Deleted tab: {name}"
+
+    return f"ERROR: unknown action: {action}"
+
+def main():
+    layout = load_layout(LAYOUT_FILE)
+    parquet_file = layout.get("dataset", {}).get("file", "db2026.02.19.parquet")
+    columns = _read_columns_from_parquet(parquet_file)
+
+    print("\nELITE Glass Coating Dashboard Agent READY")
+    print(f"Layout file: {LAYOUT_FILE}")
+    print(f"Dataset: {parquet_file}")
+    if columns:
+        print(f"Columns loaded: {len(columns)}")
+    else:
+        print("Columns: (could not read parquet schema)")
+    print("Type 'exit' to quit.\n")
+
+    while True:
+        user = input("> ").strip()
+        if user.lower() == "exit":
+            break
+
+        # Provide context to the model: columns + current tabs
+        layout_now = load_layout(LAYOUT_FILE)
+        tabs = _tab_names(layout_now)
+
+        user_payload = {
+            "user_request": user,
+            "dataset_columns": columns,
+            "existing_tabs": tabs,
+            "now": datetime.now().isoformat(timespec="seconds")
+        }
+
+        resp = client.responses.create(
+            model="gpt-4.1-mini",
+            input=[
+                {"role":"system","content":SYSTEM_PROMPT},
+                {"role":"user","content":json.dumps(user_payload)}
+            ]
+        )
+
+        try:
+            cmd = extract_json(resp.output_text)
+        except Exception as e:
+            print("MODEL_OUTPUT_PARSE_ERROR:", e)
+            print("RAW:", resp.output_text)
+            continue
+
+        result = apply_command(cmd, columns)
+        print(result)
+        print("Refresh Streamlit.\n")
+
+if __name__ == "__main__":
+    main()

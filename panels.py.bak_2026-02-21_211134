@@ -1,0 +1,356 @@
+import hashlib
+import math
+from typing import Any, Dict, List
+
+import pandas as pd
+import streamlit as st
+import plotly.express as px
+
+try:
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.decomposition import PCA
+    from sklearn.ensemble import IsolationForest
+    _SKLEARN_OK = True
+except Exception:
+    _SKLEARN_OK = False
+
+def _k(s: str) -> str:
+    # stable key helper for Streamlit elements that support key=
+    return hashlib.md5(s.encode("utf-8")).hexdigest()[:12]
+
+def _is_numeric(series: pd.Series) -> bool:
+    return pd.api.types.is_numeric_dtype(series)
+
+def _safe_numeric_cols(df: pd.DataFrame) -> List[str]:
+    return df.select_dtypes(include="number").columns.tolist()
+
+def _safe_cat_cols(df: pd.DataFrame) -> List[str]:
+    cols = []
+    for c in df.columns:
+        if pd.api.types.is_bool_dtype(df[c]) or pd.api.types.is_object_dtype(df[c]) or pd.api.types.is_categorical_dtype(df[c]):
+            cols.append(c)
+    return cols
+
+def _render_title(panel: Dict[str, Any], tab_key: str):
+    title = panel.get("title")
+    if title:
+        # NOTE: Streamlit headings (header/subheader) don't accept key= in some versions.
+        st.subheader(str(title), anchor=False, divider="gray")
+
+def panel_kpis(df: pd.DataFrame, panel: Dict[str, Any], tab_key: str):
+    _render_title(panel, tab_key)
+    metrics = panel.get("metrics", [])
+    if not metrics:
+        st.info("No KPI metrics configured.")
+        return
+
+    cols = st.columns(min(4, max(1, len(metrics))), gap="small")
+    for i, m in enumerate(metrics):
+        with cols[i % len(cols)]:
+            if m not in df.columns:
+                st.metric(label=m, value="—")
+                continue
+            s = df[m]
+            if _is_numeric(s):
+                val = float(pd.to_numeric(s, errors="coerce").dropna().mean()) if s.notna().any() else math.nan
+                st.metric(label=m, value=f"{val:.4g}" if math.isfinite(val) else "—")
+            else:
+                st.metric(label=m, value=str(s.dropna().iloc[0]) if s.dropna().shape[0] else "—")
+
+def panel_distribution(df: pd.DataFrame, panel: Dict[str, Any], tab_key: str):
+    _render_title(panel, tab_key)
+    col = panel.get("col")
+    if not col or col not in df.columns:
+        st.warning("Distribution panel missing `col` or column not found.")
+        return
+    if not _is_numeric(df[col]):
+        st.warning(f"{col} is not numeric.")
+        return
+
+    bins = st.slider("Bins", 10, 200, 50, key=_k(f"{tab_key}:bins:{col}"))
+    fig = px.histogram(df, x=col, nbins=bins, title=None)
+    st.plotly_chart(fig, use_container_width=True, key=_k(f"{tab_key}:hist:{col}:{bins}"))
+
+def panel_chart(df: pd.DataFrame, panel: Dict[str, Any], tab_key: str):
+    _render_title(panel, tab_key)
+    chart_type = panel.get("chart_type", "scatter")
+    x = panel.get("x")
+    y = panel.get("y")
+    color = panel.get("color")
+    facet_row = panel.get("facet_row")
+    facet_col = panel.get("facet_col")
+
+    for c in [x, y, color, facet_row, facet_col]:
+        if c and c not in df.columns:
+            st.warning(f"Column not found: {c}")
+            return
+
+    if chart_type == "scatter":
+        fig = px.scatter(df, x=x, y=y, color=color, facet_row=facet_row, facet_col=facet_col)
+    elif chart_type == "line":
+        fig = px.line(df.sort_values(x) if x in df.columns else df, x=x, y=y, color=color)
+    elif chart_type == "box":
+        fig = px.box(df, x=x, y=y, color=color)
+    elif chart_type == "bar":
+        fig = px.bar(df, x=x, y=y, color=color)
+    else:
+        st.warning(f"Unsupported chart_type: {chart_type}")
+        return
+
+    st.plotly_chart(fig, use_container_width=True, key=_k(f"{tab_key}:chart:{chart_type}:{x}:{y}:{color}:{facet_row}:{facet_col}"))
+
+def panel_chart_builder(df: pd.DataFrame, panel: Dict[str, Any], tab_key: str):
+    _render_title(panel, tab_key)
+    numeric_cols = _safe_numeric_cols(df)
+    if not numeric_cols:
+        st.warning("No numeric columns.")
+        return
+    all_cols = df.columns.tolist()
+    cat_cols = [c for c in all_cols if c not in numeric_cols]
+
+    c1, c2, c3 = st.columns([1, 1, 1], gap="small")
+    with c1:
+        chart_type = st.selectbox("Chart type", ["scatter", "line", "histogram", "box", "bar"], key=_k(f"{tab_key}:cb:type"))
+    with c2:
+        x = st.selectbox("X", all_cols, index=0, key=_k(f"{tab_key}:cb:x"))
+    with c3:
+        y = st.selectbox("Y", numeric_cols, index=0, key=_k(f"{tab_key}:cb:y"))
+
+    c4, c5, c6 = st.columns([1, 1, 1], gap="small")
+    with c4:
+        color = st.selectbox("Color (optional)", ["None"] + cat_cols, key=_k(f"{tab_key}:cb:color"))
+        color = None if color == "None" else color
+    with c5:
+        facet_col = st.selectbox("Facet col (optional)", ["None"] + cat_cols, key=_k(f"{tab_key}:cb:facet_col"))
+        facet_col = None if facet_col == "None" else facet_col
+    with c6:
+        facet_row = st.selectbox("Facet row (optional)", ["None"] + cat_cols, key=_k(f"{tab_key}:cb:facet_row"))
+        facet_row = None if facet_row == "None" else facet_row
+
+    run = st.button("Generate", key=_k(f"{tab_key}:cb:run:{chart_type}:{x}:{y}:{color}:{facet_row}:{facet_col}"))
+    if not run:
+        st.caption("Pick options then click Generate.")
+        return
+
+    if chart_type == "scatter":
+        fig = px.scatter(df, x=x, y=y, color=color, facet_row=facet_row, facet_col=facet_col)
+    elif chart_type == "line":
+        fig = px.line(df.sort_values(x) if x in df.columns else df, x=x, y=y, color=color)
+    elif chart_type == "histogram":
+        fig = px.histogram(df, x=x, color=color)
+    elif chart_type == "box":
+        fig = px.box(df, x=x, y=y, color=color)
+    else:
+        fig = px.bar(df, x=x, y=y, color=color)
+
+    st.plotly_chart(fig, use_container_width=True, key=_k(f"{tab_key}:cb:fig:{chart_type}:{x}:{y}:{color}:{facet_row}:{facet_col}"))
+
+def panel_groupby(df: pd.DataFrame, panel: Dict[str, Any], tab_key: str):
+    _render_title(panel, tab_key)
+    group_cols = panel.get("group_cols", [])
+    metrics = panel.get("metrics", [])
+    agg = panel.get("agg", "mean")
+
+    if not group_cols or not metrics:
+        st.warning("Groupby panel needs `group_cols` and `metrics`.")
+        return
+
+    for c in group_cols + metrics:
+        if c not in df.columns:
+            st.warning(f"Column not found: {c}")
+            return
+
+    gb = df.groupby(group_cols, dropna=False)[metrics]
+    if agg == "mean":
+        out = gb.mean(numeric_only=True)
+    elif agg == "median":
+        out = gb.median(numeric_only=True)
+    elif agg == "std":
+        out = gb.std(numeric_only=True)
+    elif agg == "min":
+        out = gb.min()
+    elif agg == "max":
+        out = gb.max()
+    else:
+        st.warning(f"Unsupported agg: {agg}")
+        return
+
+    out = out.reset_index()
+    st.dataframe(out, use_container_width=True, key=_k(f"{tab_key}:groupby:{':'.join(group_cols)}:{agg}"))
+
+def panel_timeseries(df: pd.DataFrame, panel: Dict[str, Any], tab_key: str):
+    _render_title(panel, tab_key)
+    date_col = panel.get("date", "data")
+    y = panel.get("y")
+    group = panel.get("group")
+    agg = panel.get("agg", "mean")
+    rolling = int(panel.get("rolling", 0) or 0)
+
+    for c in [date_col, y, group]:
+        if c and c not in df.columns:
+            st.warning(f"Column not found: {c}")
+            return
+
+    if not pd.api.types.is_datetime64_any_dtype(df[date_col]):
+        st.warning(f"{date_col} is not datetime. Ensure date parsing.")
+        return
+
+    dff = df.dropna(subset=[date_col])
+    if group:
+        g = dff.groupby([pd.Grouper(key=date_col, freq="D"), group], dropna=False)[y]
+    else:
+        g = dff.groupby(pd.Grouper(key=date_col, freq="D"), dropna=False)[y]
+
+    if agg == "mean":
+        out = g.mean(numeric_only=True)
+    elif agg == "median":
+        out = g.median(numeric_only=True)
+    else:
+        out = g.mean(numeric_only=True)
+
+    out = out.reset_index()
+
+    if rolling and rolling > 1:
+        if group:
+            out["rolling"] = out.groupby(group)[y].transform(lambda s: s.rolling(rolling, min_periods=1).mean())
+            fig = px.line(out.sort_values(date_col), x=date_col, y="rolling", color=group)
+        else:
+            out["rolling"] = out[y].rolling(rolling, min_periods=1).mean()
+            fig = px.line(out.sort_values(date_col), x=date_col, y="rolling")
+    else:
+        fig = px.line(out.sort_values(date_col), x=date_col, y=y, color=group)
+
+    st.plotly_chart(fig, use_container_width=True, key=_k(f"{tab_key}:ts:{date_col}:{y}:{group}:{agg}:{rolling}"))
+
+def panel_correlation(df: pd.DataFrame, panel: Dict[str, Any], tab_key: str):
+    _render_title(panel, tab_key)
+    numeric_cols = _safe_numeric_cols(df)
+    if len(numeric_cols) < 2:
+        st.warning("Not enough numeric columns for correlation.")
+        return
+
+    default_n = min(25, len(numeric_cols))
+    sel = st.multiselect("Columns", numeric_cols, default=numeric_cols[:default_n], key=_k(f"{tab_key}:corr:cols"))
+    if len(sel) < 2:
+        st.info("Select at least 2 columns.")
+        return
+
+    corr = df[sel].corr(numeric_only=True)
+    fig = px.imshow(corr, text_auto=False, aspect="auto")
+    st.plotly_chart(fig, use_container_width=True, key=_k(f"{tab_key}:corr:fig:{len(sel)}"))
+
+def panel_pca(df: pd.DataFrame, panel: Dict[str, Any], tab_key: str):
+    _render_title(panel, tab_key)
+    if not _SKLEARN_OK:
+        st.info("scikit-learn not installed. Install it to enable PCA.")
+        return
+
+    numeric_cols = _safe_numeric_cols(df)
+    if len(numeric_cols) < 3:
+        st.warning("Need at least 3 numeric columns for PCA.")
+        return
+
+    sel = st.multiselect("Numeric columns", numeric_cols, default=numeric_cols[:min(20, len(numeric_cols))], key=_k(f"{tab_key}:pca:cols"))
+    if len(sel) < 3:
+        st.info("Select at least 3 columns.")
+        return
+
+    color = st.selectbox("Color (optional)", ["None"] + _safe_cat_cols(df), key=_k(f"{tab_key}:pca:color"))
+    color = None if color == "None" else color
+
+    X = df[sel].copy()
+    X = X.apply(pd.to_numeric, errors="coerce").fillna(0.0)
+
+    scaler = StandardScaler()
+    Xs = scaler.fit_transform(X)
+
+    pca = PCA(n_components=2, random_state=42)
+    Z = pca.fit_transform(Xs)
+
+    out = pd.DataFrame({"PC1": Z[:, 0], "PC2": Z[:, 1]})
+    if color and color in df.columns:
+        out[color] = df[color].astype(str)
+
+    fig = px.scatter(out, x="PC1", y="PC2", color=color)
+    st.plotly_chart(fig, use_container_width=True, key=_k(f"{tab_key}:pca:fig:{len(sel)}:{color}"))
+
+    with st.expander("PCA explained variance / loadings", expanded=False):
+        st.write({"explained_variance_ratio": pca.explained_variance_ratio_.tolist()})
+        loadings = pd.DataFrame(pca.components_.T, index=sel, columns=["PC1_loading", "PC2_loading"])
+        st.dataframe(loadings, use_container_width=True, key=_k(f"{tab_key}:pca:loadings:{len(sel)}"))
+
+def panel_anomaly(df: pd.DataFrame, panel: Dict[str, Any], tab_key: str):
+    _render_title(panel, tab_key)
+    if not _SKLEARN_OK:
+        st.info("scikit-learn not installed. Install it to enable Anomaly Detection.")
+        return
+
+    numeric_cols = _safe_numeric_cols(df)
+    if len(numeric_cols) < 3:
+        st.warning("Need at least 3 numeric columns for anomaly detection.")
+        return
+
+    sel = st.multiselect("Numeric columns", numeric_cols, default=numeric_cols[:min(25, len(numeric_cols))], key=_k(f"{tab_key}:anom:cols"))
+    if len(sel) < 3:
+        st.info("Select at least 3 columns.")
+        return
+
+    contamination = st.slider("Contamination (expected anomaly fraction)", 0.001, 0.2, 0.02, step=0.001, key=_k(f"{tab_key}:anom:cont"))
+    n_show = st.slider("Show top anomalies", 10, 200, 50, key=_k(f"{tab_key}:anom:show"))
+
+    X = df[sel].copy()
+    X = X.apply(pd.to_numeric, errors="coerce").fillna(0.0)
+
+    model = IsolationForest(
+        n_estimators=200,
+        contamination=float(contamination),
+        random_state=42,
+        n_jobs=-1
+    )
+    scores = model.fit_predict(X)
+    raw = model.decision_function(X)  # higher is more normal
+    out = df.copy()
+    out["_anomaly"] = (scores == -1)
+    out["_anomaly_score"] = raw
+
+    top = out.sort_values("_anomaly_score", ascending=True).head(int(n_show))
+    st.dataframe(top, use_container_width=True, key=_k(f"{tab_key}:anom:df:{len(sel)}:{contamination}:{n_show}"))
+
+def panel_stats(df: pd.DataFrame, panel: Dict[str, Any], tab_key: str):
+    _render_title(panel, tab_key)
+    numeric_cols = _safe_numeric_cols(df)
+    if not numeric_cols:
+        st.warning("No numeric columns.")
+        return
+    sel = st.multiselect("Columns", numeric_cols, default=numeric_cols[:min(25, len(numeric_cols))], key=_k(f"{tab_key}:stats:cols"))
+    if not sel:
+        return
+    desc = df[sel].describe().T
+    st.dataframe(desc, use_container_width=True, key=_k(f"{tab_key}:stats:df:{len(sel)}"))
+
+def panel_plasma_stability(df: pd.DataFrame, panel: Dict[str, Any], tab_key: str, calculate_plasma_stability):
+    _render_title(panel, tab_key)
+    if calculate_plasma_stability is None:
+        st.error("plasma_engine.calculate_plasma_stability not available.")
+        return
+    stability = calculate_plasma_stability(df)
+    st.caption("Top 10 Most Unstable Cathodes")
+    top10 = stability.head(10)
+    st.dataframe(top10, use_container_width=True, key=_k(f"{tab_key}:plasma:table"))
+    if "cathode" in top10.columns and "stability_index" in top10.columns:
+        fig = px.bar(top10, x="cathode", y="stability_index")
+        st.plotly_chart(fig, use_container_width=True, key=_k(f"{tab_key}:plasma:bar"))
+
+PANEL_REGISTRY = {
+    "kpis": panel_kpis,
+    "distribution": panel_distribution,
+    "chart": panel_chart,
+    "chart_builder": panel_chart_builder,
+    "groupby": panel_groupby,
+    "timeseries": panel_timeseries,
+    "correlation": panel_correlation,
+    "pca": panel_pca,
+    "anomaly": panel_anomaly,
+    "stats": panel_stats,
+    # plasma handled separately to inject engine
+}

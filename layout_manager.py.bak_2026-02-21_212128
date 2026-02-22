@@ -1,0 +1,50 @@
+import json
+import os
+import shutil
+from datetime import datetime
+
+LAYOUT_FILE_DEFAULT = "layout.json"
+HISTORY_DIR_DEFAULT = "layout_history"
+
+def _ensure_dir(path: str) -> None:
+    os.makedirs(path, exist_ok=True)
+
+def load_layout(path: str = LAYOUT_FILE_DEFAULT) -> dict:
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {"version": 1, "tabs": []}
+
+def backup_layout(path: str = LAYOUT_FILE_DEFAULT, history_dir: str = HISTORY_DIR_DEFAULT) -> str | None:
+    if not os.path.exists(path):
+        return None
+    _ensure_dir(history_dir)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_path = os.path.join(history_dir, f"layout_{ts}.json")
+    shutil.copy2(path, backup_path)
+    return backup_path
+
+def save_layout_atomic(layout: dict, path: str = LAYOUT_FILE_DEFAULT, history_dir: str = HISTORY_DIR_DEFAULT) -> str:
+    # backup current
+    backup_layout(path, history_dir)
+
+    tmp_path = f"{path}.tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(layout, f, indent=2, ensure_ascii=False)
+    os.replace(tmp_path, path)
+    return path
+
+def list_backups(history_dir: str = HISTORY_DIR_DEFAULT) -> list[str]:
+    if not os.path.exists(history_dir):
+        return []
+    files = [os.path.join(history_dir, f) for f in os.listdir(history_dir) if f.endswith(".json")]
+    files.sort()
+    return files
+
+def rollback_last(path: str = LAYOUT_FILE_DEFAULT, history_dir: str = HISTORY_DIR_DEFAULT) -> str:
+    backups = list_backups(history_dir)
+    if not backups:
+        raise FileNotFoundError("No backups found to rollback.")
+    last = backups[-1]
+    shutil.copy2(last, path)
+    return last

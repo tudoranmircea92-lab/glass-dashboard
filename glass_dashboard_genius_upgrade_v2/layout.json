@@ -1,0 +1,183 @@
+{
+  "sidebar": {
+    "row_limit_default": 5000,
+    "row_limit_max": 50000,
+    "sample_mode_default": "head"
+  },
+  "tabs": [
+    {
+      "name": "Overview",
+      "filters": [
+        "product",
+        "date",
+        "has_color"
+      ],
+      "panels": [
+        {
+          "type": "kpis",
+          "title": "Key Coating Quality Metrics",
+          "metrics": [
+            "L_ABS_mean",
+            "L_RF_mean",
+            "L_RG_mean",
+            "L_T_mean",
+            "RT_ABS_mean",
+            "RT_RF_mean",
+            "RT_RG_mean",
+            "RT_T_mean"
+          ]
+        },
+        {
+          "type": "value_counts",
+          "title": "Has Color (0/1) distribution",
+          "col": "has_color",
+          "top": 10
+        },
+        {
+          "type": "timeseries",
+          "title": "Daily L_ABS Mean (7d)",
+          "date": "data",
+          "y": "L_ABS_mean",
+          "group": "product",
+          "agg": "mean",
+          "rolling": 7
+        },
+        {
+          "type": "chart_builder",
+          "title": "Ad-hoc chart builder"
+        },
+        {
+          "type": "column_explorer",
+          "title": "Column explorer"
+        },
+        {
+          "type": "export",
+          "title": "Export filtered data"
+        }
+      ]
+    },
+    {
+      "name": "Plasma Stability Professional",
+      "filters": [
+        "product",
+        "date",
+        "has_color"
+      ],
+      "panels": [
+        {
+          "type": "plasma_stability",
+          "title": "Plasma Stability Overview"
+        },
+        {
+          "type": "chart",
+          "title": "Arc Rate vs Vacuum Pressure (C27)",
+          "chart_type": "scatter",
+          "x": "c27.actVacuumPressure",
+          "y": "c27.actArcRate1",
+          "color": "product"
+        }
+      ]
+    },
+    {
+      "name": "Color & Optics",
+      "filters": [
+        "product",
+        "date",
+        "has_color"
+      ],
+      "panels": [
+        {
+          "type": "distribution",
+          "title": "Glass Thickness Distribution",
+          "col": "glassThickness_mm"
+        },
+        {
+          "type": "scatter_matrix",
+          "title": "Optics scatter matrix",
+          "cols": [
+            "L_ABS_mean",
+            "L_RF_mean",
+            "L_RG_mean",
+            "RT_T_mean"
+          ],
+          "color": "product"
+        },
+        {
+          "type": "chart",
+          "title": "Optics (L_ABS vs RT_T)",
+          "chart_type": "scatter",
+          "x": "L_ABS_mean",
+          "y": "RT_T_mean",
+          "color": "product"
+        }
+      ]
+    },
+    {
+      "name": "Process Diagnostics",
+      "filters": [
+        "product",
+        "date",
+        "has_color"
+      ],
+      "panels": [
+        {
+          "type": "missingness",
+          "title": "Missingness (top columns)",
+          "top": 40
+        },
+        {
+          "type": "correlation",
+          "title": "Correlation Matrix"
+        },
+        {
+          "type": "pca",
+          "title": "PCA (numeric sensors)"
+        },
+        {
+          "type": "anomaly",
+          "title": "Anomaly Detection (IsolationForest)"
+        }
+      ]
+    },
+    {
+      "name": "Advanced",
+      "filters": [
+        "product",
+        "date",
+        "has_color"
+      ],
+      "panels": [
+        {
+          "type": "groupby",
+          "title": "Mean KPIs by Week",
+          "group_cols": [
+            "weekOfYear"
+          ],
+          "metrics": [
+            "L_ABS_mean",
+            "L_RF_mean",
+            "L_RG_mean"
+          ],
+          "agg": "mean"
+        },
+        {
+          "type": "chart",
+          "title": "Process Speed vs Duration",
+          "chart_type": "scatter",
+          "x": "actProcessSpeed_mm",
+          "y": "duration_sec",
+          "color": "product"
+        },
+        {
+          "type": "timeseries",
+          "title": "Arc Rate C27 (daily)",
+          "date": "data",
+          "y": "c27.actArcRate1",
+          "group": "product",
+          "agg": "mean",
+          "rolling": 0
+        }
+      ]
+    }
+  ]
+}

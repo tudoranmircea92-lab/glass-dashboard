@@ -1,0 +1,107 @@
+{
+  "type": "dashboard",
+  "components": [
+    {
+      "type": "graph",
+      "title": "Coating Thickness Over Time",
+      "x": "timestamp",
+      "y": "coating_thickness",
+      "graph_type": "line",
+      "filter": {
+        "field": "coating_type",
+        "options": "all"
+      }
+    },
+    {
+      "type": "graph",
+      "title": "Temperature vs Coating Quality",
+      "x": "substrate_temperature",
+      "y": "coating_quality_index",
+      "graph_type": "scatter",
+      "calculation": "correlation"
+    },
+    {
+      "type": "heatmap",
+      "title": "Spectral Reflectance Distribution",
+      "x": "wavelength",
+      "y": "sample_id",
+      "value": "reflectance"
+    },
+    {
+      "type": "table",
+      "title": "Defects Summary by Batch",
+      "columns": [
+        "batch_id",
+        "defect_count",
+        "defect_type",
+        "coating_thickness_mean",
+        "process_time"
+      ],
+      "filters": [
+        {
+          "field": "defect_type",
+          "options": "all"
+        },
+        {
+          "field": "batch_id",
+          "options": "all"
+        }
+      ]
+    },
+    {
+      "type": "filter_panel",
+      "title": "Data Filters",
+      "filters": [
+        {
+          "field": "coating_type",
+          "type": "multiselect",
+          "options": "all"
+        },
+        {
+          "field": "substrate_temperature",
+          "type": "range_slider",
+          "min": 0,
+          "max": 500
+        },
+        {
+          "field": "process_pressure",
+          "type": "range_slider",
+          "min": 0,
+          "max": 10
+        },
+        {
+          "field": "timestamp",
+          "type": "date_range"
+        }
+      ]
+    },
+    {
+      "type": "calculation_panel",
+      "title": "Custom Calculations & Derived Metrics",
+      "calculations": [
+        {
+          "name": "Thickness Deviation",
+          "formula": "ABS(coating_thickness - desired_thickness)"
+        },
+        {
+          "name": "Quality Ratio",
+          "formula": "coating_quality_index / process_time"
+        },
+        {
+          "name": "Defect Rate",
+          "formula": "defect_count / total_units"
+        }
+      ]
+    },
+    {
+      "type": "stat_summary",
+      "title": "Process Statistical Summary",
+      "metrics": [
+        "mean_coating_thickness",
+        "std_dev_temperature",
+        "max_defect_count",
+        "min_process_time"
+      ]
+    }
+  ]
+}
