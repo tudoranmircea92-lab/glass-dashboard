@@ -31,10 +31,11 @@ jobs:
         run: |
           python agent_github.py
 
-      - name: Commit changes
-        run: |
-          git config user.name "AI-Agent"
-          git config user.email "ai-agent@github.com"
-          git add .
-          git commit -m "AI agent autonomous update" || echo "No changes"
-          git push
+- name: Commit changes
+  run: |
+    git config user.name "github-actions[bot]"
+    git config user.email "github-actions@users.noreply.github.com"
+    git pull --rebase
+    git add .
+    git commit -m "AI agent autonomous update" || echo "No changes"
+    git push
