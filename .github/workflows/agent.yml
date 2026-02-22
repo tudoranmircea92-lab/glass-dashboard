@@ -1,0 +1,37 @@
+name: AI Developer Agent
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * *"  # ruleaza zilnic la 06:00 UTC
+
+jobs:
+  run-agent:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install openai
+
+      - name: Run AI agent
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          python agent_github.py
+
+      - name: Commit changes
+        run: |
+          git config user.name "AI-Agent"
+          git config user.email "ai-agent@github.com"
+          git add .
+          git commit -m "AI agent autonomous update" || echo "No changes"
+          git push
